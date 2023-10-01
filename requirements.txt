@@ -1,0 +1,15 @@
+django
+djangorestframework
+django-storages
+moviepy
+pydub
+celery[redis]
+kombu==5.3.0b3
+importlib-metadata==4.13.0
+django-celery-results
+gradio_client
+drf-yasg
+gunicorn
+opencv-python
+pyautogui
+numpy
