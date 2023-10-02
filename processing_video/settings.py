@@ -28,7 +28,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 DEBUG = True
 
 # ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS').split(',')
-ALLOWED_HOST = ['processing-video.onrender.com', 'https://www.processing-video.onrender.com']
+ALLOWED_HOST = ['processing-video.onrender.com', '127.0.0.1']
 
 # Application definition
 
