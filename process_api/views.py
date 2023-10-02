@@ -2,7 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from datetime import datetime, timedelta
-from django.http import JsonResponse
+from django.http import JsonResponse, FileResponse
 
 from .models import Video
 from .tasks import process_video, transcribe_audio
@@ -39,6 +39,7 @@ def upload_chunk(request, video_id):
 
     return Response({'message': 'Chunk uploaded successfully.'}, status=status.HTTP_200_OK)
 
+
 @api_view(['POST'])
 def stop_recording(request, video_id):
     try:
@@ -47,9 +48,9 @@ def stop_recording(request, video_id):
         return Response({'error': 'Video not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     # Check if a certain duration of inactivity has passed (adjust the threshold as needed)
-    if has_inactivity_passed(video, threshold_minutes=15):
+    if has_inactivity_passed(video, threshold_seconds=10):
         # Trigger the video processing task
-        process_video.delay(video.id)
+        compile_final_video.delay(video.id)
 
         return JsonResponse({'message': 'Recording stopped. Video processing initiated.'}, status=status.HTTP_200_OK)
 
@@ -59,7 +60,7 @@ def stop_recording(request, video_id):
 def has_inactivity_passed(video, threshold_minutes):
     if video.updated_at:
         time_since_last_chunk = datetime.now() - video.updated_at
-        return time_since_last_chunk > timedelta(seconds=threshold_minutes)
+        return time_since_last_chunk > timedelta(seconds=threshold_seconds)
     return False
 
 
@@ -91,3 +92,17 @@ def get_transcription(request, video_id):
         return Response({'error': 'Video not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     return Response({'transcription': video.transcription}, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+def get_processed_video(request, video_id):
+    try:
+        video = Video.objects.get(pk=video_id)
+    except Video.DoesNotExist:
+        return Response({'error': 'Video not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Check if the video has been processed
+    if not video.final_video:
+        return Response({'error': 'Video not processed yet.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Return the processed video file
+    return FileResponse(open(video.final_video.path, 'rb'), content_type='video/mp4')

@@ -18,27 +18,28 @@ def process_video(video_id, chunk_path):
     processed_chunk_path = f'processed_chunks/{video_id}_{video.uploaded_chunks}_processed.mp4'
     processed_clip.write_videofile(processed_chunk_path, format="mp4", codec="libx264", audio_codec="aac")
 
-    # Concatenate processed chunks to build the final video
-    if video.uploaded_chunks == 1:
-        # If it's the first chunk, create a list to hold processed clips
-        video.processed_clips = [VideoFileClip(processed_chunk_path)]
-    else:
-        # Concatenate the new processed chunk to the list
-        video.processed_clips.append(VideoFileClip(processed_chunk_path))
-
-        # Concatenate all processed chunks to build the final video
-        final_video_path = f'final_videos/{video_id}_final.mp4'
-        concatenate_videoclips(video.processed_clips).write_videofile(
-            final_video_path, format="mp4", codec="libx264", audio_codec="aac"
-        )
-
-        # Save the path of the final video in the database
-        video.final_video = final_video_path
-        video.save()
+    # Add the processed chunk to the list
+    video.processed_clips.append(processed_chunk_path)
+    video.save()
 
     # Clean up: Delete the processed chunk file
     os.remove(processed_chunk_path)
 
+@shared_task
+def compile_final_video(video_id):
+    video = Video.objects.get(pk=video_id)
+
+    # Concatenate all processed chunks to build the final video
+    final_video_path = f'final_videos/{video_id}_final.mp4'
+    concatenate_videoclips([VideoFileClip(chunk) for chunk in video.processed_clips]).write_videofile(
+        final_video_path, format="mp4", codec="libx264", audio_codec="aac"
+    )
+
+    # Save the path of the final video in the database
+    video.final_video = final_video_path
+    video.save()
+
+    
 @shared_task
 def transcribe_audio(video_id):
     video = Video.objects.get(pk=video_id)
