@@ -57,7 +57,7 @@ def stop_recording(request, video_id):
     return JsonResponse({'message': 'Recording stopped.'}, status=status.HTTP_200_OK)
 
 
-def has_inactivity_passed(video, threshold_minutes):
+def has_inactivity_passed(video, threshold_seconds):
     if video.updated_at:
         time_since_last_chunk = datetime.now() - video.updated_at
         return time_since_last_chunk > timedelta(seconds=threshold_seconds)
