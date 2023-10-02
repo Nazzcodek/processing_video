@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .models import Video
-from .tasks import process_video
+from .tasks import process_video, transcribe_audio
 from .serializers import VideoSerializer
 
 @api_view(['POST'])
@@ -57,3 +57,23 @@ def process_status(request, video_id):
 
     serializer = VideoSerializer(video)
     return Response(serializer.data)
+
+@api_view(['POST'])
+def start_transcription(request, video_id):
+    try:
+        video = Video.objects.get(pk=video_id)
+    except Video.DoesNotExist:
+        return Response({'error': 'Video not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    transcribe_audio.delay(video.id)  # Trigger the transcription task asynchronously
+
+    return Response({'message': 'Transcription process started.'}, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+def get_transcription(request, video_id):
+    try:
+        video = Video.objects.get(pk=video_id)
+    except Video.DoesNotExist:
+        return Response({'error': 'Video not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response({'transcription': video.transcription}, status=status.HTTP_200_OK)
