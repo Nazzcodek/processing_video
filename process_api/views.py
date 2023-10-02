@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from django.http import JsonResponse, FileResponse
 
 from .models import Video
-from .tasks import process_video, transcribe_audio
+from .tasks import process_video, transcribe_audio, compile_final_video
 from .serializers import VideoSerializer
 
 @api_view(['POST'])
