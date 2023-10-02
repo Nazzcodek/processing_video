@@ -1,62 +1,64 @@
 from celery import shared_task
-from moviepy.editor import VideoFileClip, AudioFileClip
+from moviepy.editor import VideoFileClip, concatenate_videoclips
+from moviepy.audio.fx.all import audio_fadein, audio_fadeout
 from io import BytesIO
-from django.core.files.base import ContentFile
-
+import os
 from .models import Video
-from gradio_client import Client
-
-
-@shared_task
-def process_video(video_id, target_bitrate):
-    video = Video.objects.get(pk=video_id)
-    input_path = video.file.path
-    output_path = f'processed_videos/{video_id}_processed.mp4'
-
-    video_clip = VideoFileClip(input_path)
-    processed_clip = video_clip.resize(width=640)
-
-    # Write the processed video to a file
-    processed_clip.write_videofile(output_path, format="mp4", bitrate=target_bitrate)
-
-    # Save the processed video file path to the database
-    video.processed_file = output_path
-    video.save()
+from gradio_client import Client 
 
 @shared_task
-def extract_audio(video_id):
+def process_video(video_id, chunk_path):
     video = Video.objects.get(pk=video_id)
-    input_path = video.processed_file
-    output_path = f'processed_videos/{video_id}_audio.wav'
 
-    # Create an AudioFileClip from the processed video file
-    audio_clip = AudioFileClip(input_path)
+    # Process the current chunk
+    chunk_clip = VideoFileClip(chunk_path)
+    processed_clip = chunk_clip.resize(width=640)
 
-    # Save the audio to a separate file
-    audio_clip.write_audiofile(output_path, codec='pcm_s16le', ffmpeg_params=["-ac", "1"])
+    # Save the processed chunk
+    processed_chunk_path = f'processed_chunks/{video_id}_{video.uploaded_chunks}_processed.mp4'
+    processed_clip.write_videofile(processed_chunk_path, format="mp4", codec="libx264", audio_codec="aac")
 
-    # Save the audio file path to the database
-    video.audio_file = output_path
-    video.save()
+    # Concatenate processed chunks to build the final video
+    if video.uploaded_chunks == 1:
+        # If it's the first chunk, create a list to hold processed clips
+        video.processed_clips = [VideoFileClip(processed_chunk_path)]
+    else:
+        # Concatenate the new processed chunk to the list
+        video.processed_clips.append(VideoFileClip(processed_chunk_path))
+
+        # Concatenate all processed chunks to build the final video
+        final_video_path = f'final_videos/{video_id}_final.mp4'
+        concatenate_videoclips(video.processed_clips).write_videofile(
+            final_video_path, format="mp4", codec="libx264", audio_codec="aac"
+        )
+
+        # Save the path of the final video in the database
+        video.final_video = final_video_path
+        video.save()
+
+    # Clean up: Delete the processed chunk file
+    os.remove(processed_chunk_path)
 
 @shared_task
 def transcribe_audio(video_id):
     video = Video.objects.get(pk=video_id)
-    audio_path = video.audio_file
+    audio_path = video.final_video  # Use the final processed video for transcription
 
-    # Read the audio file
-    with open(audio_path, 'rb') as audio_file:
-        audio_buffer = BytesIO(audio_file.read())
+    # Read the audio from the final processed video
+    with VideoFileClip(audio_path) as final_clip:
+        final_audio = final_clip.audio
+
+        # Fade in and fade out audio
+        final_audio_faded = audio_fadein(audio_fadeout(final_audio, final_clip.duration - 1), 1)
+
+        # Save the audio to a separate file
+        audio_buffer = BytesIO()
+        final_audio_faded.write_audiofile(audio_buffer, codec='pcm_s16le', ffmpeg_params=["-ac", "1"])
+        audio_buffer.seek(0)
 
     client = Client("abidlabs/whisper")
     transcript = client.predict(audio_buffer)
 
     # Save the transcript to the database
-    video.transcription = transcript
-    video.save()
-
-@shared_task
-def update_video_transcription(video_id, transcript):
-    video = Video.objects.get(pk=video_id)
     video.transcription = transcript
     video.save()

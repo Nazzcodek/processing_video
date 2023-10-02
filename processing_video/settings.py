@@ -27,7 +27,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '127.0.0.1:8000').split(',')
 
 
 # Application definition
@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     # 'django_celery_beat',
     'process_api',
     'rest_framework',
+    'drf_yasg',
 ]
 
 MIDDLEWARE = [

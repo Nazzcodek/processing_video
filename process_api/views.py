@@ -1,6 +1,8 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
+from datetime import datetime, timedelta
+from django.http import JsonResponse
 
 from .models import Video
 from .tasks import process_video, transcribe_audio
@@ -21,7 +23,6 @@ def upload_chunk(request, video_id):
     except Video.DoesNotExist:
         return Response({'error': 'Video not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Assume 'chunk' is a key in the request data that contains the chunk data
     chunk_data = request.data.get('chunk')
     
     # Save the chunk to a file
@@ -33,6 +34,9 @@ def upload_chunk(request, video_id):
     video.uploaded_chunks += 1
     video.save()
 
+    # Process the current chunk in real-time
+    process_video.delay(video.id, chunk_path)
+
     return Response({'message': 'Chunk uploaded successfully.'}, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
@@ -42,11 +46,22 @@ def stop_recording(request, video_id):
     except Video.DoesNotExist:
         return Response({'error': 'Video not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Trigger the video processing task if all chunks have been uploaded
-    if video.uploaded_chunks == video.total_chunks:
+    # Check if a certain duration of inactivity has passed (adjust the threshold as needed)
+    if has_inactivity_passed(video, threshold_minutes=15):
+        # Trigger the video processing task
         process_video.delay(video.id)
 
-    return Response({'message': 'Recording stopped.'}, status=status.HTTP_200_OK)
+        return JsonResponse({'message': 'Recording stopped. Video processing initiated.'}, status=status.HTTP_200_OK)
+
+    return JsonResponse({'message': 'Recording stopped.'}, status=status.HTTP_200_OK)
+
+
+def has_inactivity_passed(video, threshold_minutes):
+    if video.updated_at:
+        time_since_last_chunk = datetime.now() - video.updated_at
+        return time_since_last_chunk > timedelta(seconds=threshold_minutes)
+    return False
+
 
 @api_view(['GET'])
 def process_status(request, video_id):
@@ -65,8 +80,7 @@ def start_transcription(request, video_id):
     except Video.DoesNotExist:
         return Response({'error': 'Video not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    transcribe_audio.delay(video.id)  # Trigger the transcription task asynchronously
-
+    transcribe_audio.delay(video.id)
     return Response({'message': 'Transcription process started.'}, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
